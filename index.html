@@ -33,6 +33,8 @@ select,input[type=text],input[type=number],input[type=search]{width:100%;padding
   <div class="row"><select id="site"></select><select id="mode"><option value="ask" selected>Ask quantity</option><option value="add">Each scan adds 1</option></select></div>
   <video id="vid" playsinline muted></video>
   <div class="row"><button id="cam">Start camera</button><input type="text" id="man" inputmode="numeric" placeholder="Type or scan a barcode"><button class="sec" id="go">Go</button></div>
+  <input type="search" id="fq" placeholder="No barcode? Type to find a product&hellip;" autocomplete="off">
+  <div id="fres" class="box pick hide"></div>
   <div id="status">Point the camera at a barcode.</div>
   <div id="qtyBox" class="row hide"><input type="number" step="any" min="0" id="qty" placeholder="Quantity"><button id="qtyOk">Add</button><button class="sec" id="qtyNo">Cancel</button></div>
   <div id="linkBox" class="box hide"><input type="search" id="lq" placeholder="Search product to link&hellip;"><div class="pick" id="pick"></div><button class="sec sm" id="skip" style="margin-top:8px">Skip</button> <button class="sec sm" id="linkNew" style="margin-top:8px">Not in list: add new product</button></div>
@@ -127,9 +129,21 @@ function handle(code,fromCam){
   $("qtyBox").classList.add("hide");$("linkBox").classList.add("hide");pend=null;
   var pid=D.barcodes[code],p=pid&&D.products.find(function(x){return x.id===pid;});
   if(!p){var h=names[code]||"";pend={code:code,mode:"link",hint:h};say('Barcode <strong>'+esc(code)+'</strong> not linked yet.'+(h?' Previously scanned as <strong>'+esc(h)+'</strong>.':'')+' Pick the product:',"warn");$("linkBox").classList.remove("hide");$("lq").value="";pick();return;}
+  useProduct(p);
+}
+function useProduct(p){
   if(!(p.active&&p.active[D.siteId])){say('<strong>'+esc(p.desc)+'</strong> is not active at this site.',"warn");return;}
   if($("mode").value==="ask"){pend={mode:"qty",p:p};say('<strong>'+esc(p.desc)+'</strong> ('+esc(p.unit||"")+') &ndash; quantity:',"ok");$("qtyBox").classList.remove("hide");$("qty").value="";$("qty").focus();}
   else add(p,1);
+}
+function findRender(){
+  var q=$("fq").value.trim().toLowerCase(),box=$("fres");
+  if(!q){box.innerHTML="";box.classList.add("hide");return;}
+  var words=q.split(/\s+/);
+  var l=active().filter(function(p){var t=(p.desc+" "+p.code).toLowerCase();return words.every(function(w){return t.indexOf(w)!==-1;});});
+  var c=cnt();
+  box.innerHTML=l.slice(0,30).map(function(p){var v=c[p.id];return '<div data-id="'+esc(p.id)+'">'+esc(p.desc)+' <small>'+esc(p.unit||"")+(v!==undefined&&v!==""?' &middot; counted '+esc(v):'')+'</small></div>';}).join("")+'<div data-new="1"><strong>+ Not here? Add new product</strong></div>';
+  box.classList.remove("hide");
 }
 function pick(){
   var q=$("lq").value.trim().toLowerCase(),l=active().filter(function(p){return !q||p.desc.toLowerCase().indexOf(q)!==-1||String(p.code).indexOf(q)!==-1;});
@@ -138,6 +152,12 @@ function pick(){
   $("pick").innerHTML=l.slice(0,40).map(function(p){return '<div data-id="'+esc(p.id)+'">'+esc(p.desc)+' <small>'+esc(p.unit||"")+'</small></div>';}).join("")||'<div>No match</div>';
 }
 $("lq").addEventListener("input",pick);
+$("fq").addEventListener("input",findRender);
+$("fres").addEventListener("click",function(e){
+  var d=e.target.closest("div[data-id],div[data-new]");if(!d)return;
+  if(d.getAttribute("data-new")){var t=$("fq").value.trim();$("fq").value="";findRender();openNew("",t);return;}
+  var p=D.products.find(function(x){return x.id===d.getAttribute("data-id");});if(!p)return;
+  $("fq").value="";findRender();$("qtyBox").classList.add("hide");$("linkBox").classList.add("hide");pend=null;useProduct(p);});
 $("skip").addEventListener("click",function(){pend=null;$("linkBox").classList.add("hide");say("Skipped.");});
 $("pick").addEventListener("click",function(e){var d=e.target.closest("[data-id]");if(!d||!pend||pend.mode!=="link")return;D.barcodes[pend.code]=d.getAttribute("data-id");save();var c=pend.code;pend=null;$("linkBox").classList.add("hide");lastC="";handle(c);});
 function qok(){if(!pend||pend.mode!=="qty")return;var q=parseFloat($("qty").value);if(isNaN(q))return;var p=pend.p;pend=null;$("qtyBox").classList.add("hide");add(p,q);}
