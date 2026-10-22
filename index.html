@@ -37,13 +37,14 @@ select,input[type=text],input[type=number],input[type=search]{width:100%;padding
   <div id="fres" class="box pick hide"></div>
   <div id="status">Point the camera at a barcode.</div>
   <div id="qtyBox" class="row hide"><input type="number" step="any" min="0" id="qty" placeholder="Quantity"><button id="qtyOk">Add</button><button class="sec" id="qtyNo">Cancel</button></div>
+  <div id="enBox" class="box hide"><div id="enMsg"></div><div class="row" style="margin-top:8px"><button id="enYes" class="brick">Enable for this site</button><button class="sec" id="enNo">Cancel</button></div></div>
   <div id="linkBox" class="box hide"><input type="search" id="lq" placeholder="Search product to link&hellip;"><div class="pick" id="pick"></div><button class="sec sm" id="skip" style="margin-top:8px">Skip</button> <button class="sec sm" id="linkNew" style="margin-top:8px">Not in list: add new product</button></div>
 
   <div class="box"><strong>Counted so far (<span id="cnt">0</span>)</strong><div class="list" id="list"></div></div>
   <div class="row"><button id="addNew" class="sec">+ Add new product</button></div>
   <div id="newBox" class="box hide"><strong>New product</strong>
     <div class="row"><input type="text" id="npDesc" placeholder="Description, e.g. Brand New Gin"></div>
-    <div class="row"><input type="text" id="npCat" list="catList" placeholder="Category"><input type="text" id="npUnit" list="unitList" placeholder="Unit, e.g. 70CL"></div>
+    <div class="row"><input type="text" id="npCat" list="catList" placeholder="Category"><select id="npUnitSel"></select><input type="text" id="npUnit" placeholder="Or type a unit, e.g. 70CL"></div>
     <div class="row"><input type="text" id="npBc" inputmode="numeric" placeholder="Barcode (optional)"><button class="sec sm" id="npBcClr" type="button">Clear</button><input type="number" id="npCost" step="any" min="0" placeholder="Cost &pound; (optional)"></div>
     <div class="row"><input type="number" id="npQty" step="any" min="0" placeholder="Count now (optional)"></div>
     <div style="font-size:13px;color:var(--soft)">Stocked at:</div><div id="npSites"></div>
@@ -56,7 +57,7 @@ select,input[type=text],input[type=number],input[type=search]{width:100%;padding
 <script>
 (function(){
 var KEY="stockscanner_v1", D={products:[],sites:[],barcodes:{},counts:{},siteId:"",newProducts:[]};
-function load(){try{var d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&d.products){D=d;if(!D.newProducts)D.newProducts=[];}}catch(e){}}
+function load(){try{var d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&d.products){D=d;if(!D.newProducts)D.newProducts=[];}}catch(e){}if(D&&!D.enabled)D.enabled={};}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
 var $=function(i){return document.getElementById(i);}, esc=function(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
 var names={};try{names=JSON.parse($("bcnames").textContent);}catch(e){}
@@ -64,7 +65,7 @@ var stream=null,timer=null,zx=null,pend=null,lastC="",lastT=0;
 function say(m,c){var e=$("status");e.className=c||"";e.innerHTML=m;}
 function active(){return D.products.filter(function(p){return p.active&&p.active[D.siteId];});}
 function cnt(){return D.counts[D.siteId]||(D.counts[D.siteId]={});}
-function beep(){try{var c=new(window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator();o.frequency.value=880;o.connect(c.destination);o.start();setTimeout(function(){o.stop();c.close();},90);}catch(e){}try{navigator.vibrate&&navigator.vibrate(40);}catch(e){}}
+var actx=null;function beep(){try{if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();if(actx.state==="suspended")actx.resume();var o=actx.createOscillator(),g=actx.createGain();o.frequency.value=880;g.gain.value=0.15;o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+0.09);}catch(e){}}
 function show(){
   var has=D.products.length>0; $("setup").classList.toggle("hide",has); $("main").classList.toggle("hide",!has); if(!has)return;
   $("site").innerHTML=D.sites.map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===D.siteId?' selected':'')+'>'+esc(s.name)+'</option>';}).join("");
@@ -85,7 +86,8 @@ function onData(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r
     else pend2.push(x);});
   var added=b.products.filter(function(x){return !oldIds[x.id];}).length;
   var sid=D.siteId;if(!b.sites.some(function(s){return s.id===sid;}))sid=(b.sites[0]&&b.sites[0].id)||"";
-  D={newProducts:pend2,products:b.products.concat(pend2),sites:b.sites,barcodes:bcs,counts:counts,siteId:sid,updated:b.exportedAt||new Date().toISOString()};
+  var enab=D.enabled||{};D={newProducts:pend2,products:b.products.concat(pend2),sites:b.sites,barcodes:bcs,counts:counts,siteId:sid,enabled:enab,updated:b.exportedAt||new Date().toISOString()};
+  Object.keys(enab).forEach(function(s){enab[s].forEach(function(id){var q=D.products.find(function(x){return x.id===id;});if(q){if(!q.active)q.active={};q.active[s]=true;}});});
   Object.keys(b.countsBySite||{}).forEach(function(s){if(!D.counts[s]||!Object.keys(D.counts[s]).length)D.counts[s]=Object.assign({},b.countsBySite[s]);});
   save();show();if(added>0&&Object.keys(oldIds).length)say("Products updated: "+added+" new product"+(added>1?"s":"")+" added. Your counts and barcode links are unchanged.","ok");else if(Object.keys(oldIds).length)say("Products updated. No new products in this file. Your counts are unchanged.","ok");
   }catch(err){alert("That isn't a Wet Stock System file. Use Export for phone (or Export backup) in the main system.");}};r.readAsText(f);e.target.value="";}
@@ -93,13 +95,15 @@ $("bkFile").addEventListener("change",onData);$("updFile").addEventListener("cha
 $("reload").addEventListener("click",function(){$("updFile").click();});
 $("site").addEventListener("change",function(){D.siteId=this.value;save();show();});
 $("list").addEventListener("input",function(e){var id=e.target.getAttribute("data-id");if(!id)return;cnt()[id]=e.target.value;save();});
-$("clr").addEventListener("click",function(){if(this.dataset.s!=="1"){this.dataset.s="1";this.textContent="Tap again to clear";var b=this;setTimeout(function(){b.dataset.s="";b.textContent="Clear counts";},3000);return;}D.counts[D.siteId]={};save();show();this.dataset.s="";this.textContent="Clear counts";});
+$("clr").addEventListener("click",function(){if(this.dataset.s!=="1"){this.dataset.s="1";this.textContent="Tap again to clear";var b=this;setTimeout(function(){b.dataset.s="";b.textContent="Clear counts";},3000);return;}D.counts[D.siteId]={};if(D.enabled)D.enabled[D.siteId]=[];save();show();this.dataset.s="";this.textContent="Clear counts";});
 function add(p,q){var c=cnt(),cur=parseFloat(c[p.id]);if(isNaN(cur))cur=0;var n=Math.round((cur+q)*10000)/10000;c[p.id]=String(n);save();show();say('<strong>'+esc(p.desc)+'</strong> ('+esc(p.unit||"")+')<br>+'+q+' &rarr; now <strong>'+n+'</strong>',"ok");}
 
 function uid(){return "u"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function normU(u){var s=String(u||"").trim().replace(/\s+/g,"").toUpperCase();if(!s)return"";if(s==="EACH"||s==="UNIT")return"EA";if(s==="PT"||s==="PINTS")return"PINT";var m=s.match(/^(\d+(?:\.\d+)?)(ML|CL|L|LT|LTR|LITRE|LITRES)?$/);if(!m)return s;var n=parseFloat(m[1]),x=m[2],f=function(v){return String(Math.round(v*1000)/1000);};if(!x)return n>=100?f(n)+"ML":s;if(x==="ML")return f(n)+"ML";if(x==="CL")return f(n*10)+"ML";return f(n)+"L";}
 function openNew(bc,desc){
   var cats={},units={};D.products.forEach(function(p){if(p.cat)cats[p.cat]=1;if(p.unit)units[p.unit]=1;});
   $("catList").innerHTML=Object.keys(cats).sort().map(function(c){return '<option value="'+esc(c)+'">';}).join("");
+  (function(){var base=["700ML","1L","750ML","500ML","330ML","275ML","200ML","PINT","GAL","EA"],u=base.slice();Object.keys(units).forEach(function(x){if(u.indexOf(x)<0)u.push(x);});$("npUnitSel").innerHTML='<option value="">Unit...</option>'+u.map(function(x){return '<option>'+esc(x)+'</option>';}).join("");$("npUnitSel").onchange=function(){$("npUnit").value=this.value;};})();
   $("unitList").innerHTML=Object.keys(units).sort().map(function(c){return '<option value="'+esc(c)+'">';}).join("");
   $("npSites").innerHTML=D.sites.map(function(s){return '<label style="display:block;padding:3px 0"><input type="checkbox" value="'+esc(s.id)+'"'+(s.id===D.siteId?' checked':'')+'> '+esc(s.name)+'</label>';}).join("");
   $("npDesc").value=desc||"";$("npCat").value="";$("npUnit").value="";$("npBc").value=bc||"";$("npCost").value="";$("npQty").value="";
@@ -110,7 +114,7 @@ $("linkNew").addEventListener("click",function(){var c=pend&&pend.code||"",h=pen
 $("npBcClr").addEventListener("click",function(){$("npBc").value="";});
 $("npCancel").addEventListener("click",function(){$("newBox").classList.add("hide");});
 $("npSave").addEventListener("click",function(){
-  var desc=$("npDesc").value.trim(),cat=$("npCat").value.trim(),unit=$("npUnit").value.trim();
+  var desc=$("npDesc").value.trim(),cat=$("npCat").value.trim(),unit=normU($("npUnit").value);
   if(!desc||!cat||!unit){say("Enter a description, category and unit.","warn");return;}
   var nd=desc.toLowerCase().replace(/\s+/g," "),dup=D.products.find(function(p){return p.desc.toLowerCase().replace(/\s+/g," ")===nd&&String(p.unit||"").toLowerCase()===unit.toLowerCase();});
   if(dup){say("That product is already in the list ("+esc(dup.desc)+"). Scan or search for it instead.","warn");return;}
@@ -131,8 +135,12 @@ function handle(code,fromCam){
   if(!p){var h=names[code]||"";pend={code:code,mode:"link",hint:h};say('Barcode <strong>'+esc(code)+'</strong> not linked yet.'+(h?' Previously scanned as <strong>'+esc(h)+'</strong>.':'')+' Pick the product:',"warn");$("linkBox").classList.remove("hide");$("lq").value="";pick();return;}
   useProduct(p);
 }
+function siteName(){var s=D.sites.find(function(x){return x.id===D.siteId;});return s?s.name:"this site";}
+function offerEnable(p){pend={mode:"enable",p:p};$("qtyBox").classList.add("hide");$("linkBox").classList.add("hide");$("enMsg").innerHTML='<strong>'+esc(p.desc)+'</strong> ('+esc(p.unit||"")+') is in the master list but not switched on for <strong>'+esc(siteName())+'</strong>. Enable it here?';$("enBox").classList.remove("hide");say("Not stocked at this site yet.","warn");}
+$("enYes").addEventListener("click",function(){var p=pend&&pend.mode==="enable"&&pend.p;if(!p)return;if(!p.active)p.active={};p.active[D.siteId]=true;var e=D.enabled[D.siteId]||(D.enabled[D.siteId]=[]);if(e.indexOf(p.id)<0)e.push(p.id);save();pend=null;$("enBox").classList.add("hide");useProduct(p);});
+$("enNo").addEventListener("click",function(){pend=null;$("enBox").classList.add("hide");say("Cancelled.");});
 function useProduct(p){
-  if(!(p.active&&p.active[D.siteId])){say('<strong>'+esc(p.desc)+'</strong> is not active at this site.',"warn");return;}
+  if(!(p.active&&p.active[D.siteId])){offerEnable(p);return;}
   if($("mode").value==="ask"){pend={mode:"qty",p:p};say('<strong>'+esc(p.desc)+'</strong> ('+esc(p.unit||"")+') &ndash; quantity:',"ok");$("qtyBox").classList.remove("hide");$("qty").value="";$("qty").focus();}
   else add(p,1);
 }
@@ -142,7 +150,8 @@ function findRender(){
   var words=q.split(/\s+/);
   var l=active().filter(function(p){var t=(p.desc+" "+p.code).toLowerCase();return words.every(function(w){return t.indexOf(w)!==-1;});});
   var c=cnt();
-  box.innerHTML=l.slice(0,30).map(function(p){var v=c[p.id];return '<div data-id="'+esc(p.id)+'">'+esc(p.desc)+' <small>'+esc(p.unit||"")+(v!==undefined&&v!==""?' &middot; counted '+esc(v):'')+'</small></div>';}).join("")+'<div data-new="1"><strong>+ Not here? Add new product</strong></div>';
+  var off=l.length<30?D.products.filter(function(p){if(p.active&&p.active[D.siteId])return false;var t=(p.desc+" "+p.code).toLowerCase();return words.every(function(w){return t.indexOf(w)!==-1;});}).slice(0,10):[];
+  box.innerHTML=l.slice(0,30).map(function(p){var v=c[p.id];return '<div data-id="'+esc(p.id)+'">'+esc(p.desc)+' <small>'+esc(p.unit||"")+(v!==undefined&&v!==""?' &middot; counted '+esc(v):'')+'</small></div>';}).join("")+off.map(function(p){return '<div data-id="'+esc(p.id)+'" style="opacity:.65">'+esc(p.desc)+' <small>'+esc(p.unit||"")+' &middot; not enabled here &ndash; tap to enable</small></div>';}).join("")+'<div data-new="1"><strong>+ Not here? Add new product</strong></div>';
   box.classList.remove("hide");
 }
 function pick(){
@@ -164,24 +173,49 @@ function qok(){if(!pend||pend.mode!=="qty")return;var q=parseFloat($("qty").valu
 $("qtyOk").addEventListener("click",qok);$("qtyNo").addEventListener("click",function(){pend=null;$("qtyBox").classList.add("hide");say("Cancelled.");});$("qty").addEventListener("keydown",function(e){if(e.key==="Enter")qok();});
 function man(){var v=$("man").value;$("man").value="";lastC="";handle(v);}
 $("go").addEventListener("click",man);$("man").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();man();}});
-function stop(){if(timer){clearInterval(timer);timer=null;}if(zx){try{zx.reset();}catch(e){}zx=null;}if(stream){stream.getTracks().forEach(function(t){t.stop();});stream=null;}$("vid").style.display="none";$("cam").textContent="Start camera";}
+var camWanted=false,starting=false,loopOn=false,gen=0;
+function stop(keepWanted){gen++;loopOn=false;if(!keepWanted)camWanted=false;if(timer){clearTimeout(timer);timer=null;}if(zx){try{zx.reset();}catch(e){}zx=null;}if(stream){stream.getTracks().forEach(function(t){t.onended=null;t.stop();});stream=null;}var v=$("vid");try{v.pause();v.srcObject=null;}catch(e){}v.style.display="none";$("cam").textContent="Start camera";}
+function camFail(e){stop();say("Couldn't open the camera ("+esc((e&&e.name)||"error")+"). Close other apps using the camera, allow camera access, or type the barcode.","warn");}
 function start(){
+  if(starting)return;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){say("The camera needs a secure (https) page in a normal browser such as Chrome. You can still type a barcode.","warn");return;}
-  var v=$("vid");v.style.display="block";
+  stop(true);camWanted=true;starting=true;var my=gen,v=$("vid");v.style.display="block";
+  var cons={video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720},frameRate:{ideal:24,max:30}},audio:false};
   if("BarcodeDetector" in window){
-    navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"}},audio:false}).then(function(s){stream=s;v.srcObject=s;v.play();
+    navigator.mediaDevices.getUserMedia(cons).then(function(s){
+      starting=false;
+      if(my!==gen||!camWanted){s.getTracks().forEach(function(t){t.stop();});return;}
+      stream=s;v.srcObject=s;var pp=v.play();if(pp&&pp.catch)pp.catch(function(){});
+      s.getTracks().forEach(function(t){t.onended=function(){if(my===gen){stop(true);say("Camera stopped. Tap Start camera to carry on.","warn");}};});
       var det=new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e","code_128","code_39","itf","qr_code"]});$("cam").textContent="Stop camera";say("Scanning…");
-      timer=setInterval(function(){if(v.readyState<2)return;det.detect(v).then(function(r){if(r&&r.length)handle(r[0].rawValue,true);}).catch(function(){});},250);
-    }).catch(function(e){stop();say("Couldn't open the camera ("+esc(e.name||"error")+"). Allow camera access in the browser, or type the barcode.","warn");});
+      loopOn=true;var lastTime=-1,lastMove=Date.now();
+      // one detection at a time (never queue up), and restart the camera if the picture freezes
+      var tick=function(){
+        if(!loopOn||my!==gen)return;
+        var again=function(){if(loopOn&&my===gen)timer=setTimeout(tick,busy()?400:160);};
+        if(v.readyState<2){again();return;}
+        if(v.currentTime!==lastTime){lastTime=v.currentTime;lastMove=Date.now();}
+        else if(Date.now()-lastMove>4000){say("Camera froze, restarting…","warn");stop(true);setTimeout(function(){if(camWanted)start();},400);return;}
+        if(busy()){again();return;}
+        det.detect(v).then(function(r){if(my===gen&&r&&r.length)handle(r[0].rawValue,true);}).catch(function(){}).then(again);
+      };
+      tick();
+    }).catch(function(e){starting=false;camFail(e);});
   }else{
-    var go=function(){try{zx=new ZXing.BrowserMultiFormatReader();zx.decodeFromConstraints({video:{facingMode:{ideal:"environment"}},audio:false},v,function(r){if(r)handle(r.getText(),true);});$("cam").textContent="Stop camera";say("Scanning…");}catch(e){stop();say("Couldn't start the scanner.","warn");}};
-    if(window.ZXing)return go();var sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";sc.onload=go;sc.onerror=function(){stop();say("Scanner library couldn't load. Check your connection or type the barcode.","warn");};document.head.appendChild(sc);
+    var go=function(){starting=false;if(my!==gen||!camWanted)return;try{zx=new ZXing.BrowserMultiFormatReader();zx.decodeFromConstraints(cons,v,function(r){if(r&&my===gen)handle(r.getText(),true);});$("cam").textContent="Stop camera";say("Scanning…");}catch(e){stop();say("Couldn't start the scanner.","warn");}};
+    if(window.ZXing)return go();var sc=document.createElement("script");sc.src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";sc.onload=go;sc.onerror=function(){starting=false;stop();say("Scanner library couldn't load. Check your connection or type the barcode.","warn");};document.head.appendChild(sc);
   }
 }
-$("cam").addEventListener("click",function(){if(stream||zx)stop();else start();});
+// switching away from the page (or locking the phone) kills the camera feed, so release it and bring it back on return
+document.addEventListener("visibilitychange",function(){
+  if(document.hidden){if(stream||zx||starting){var w=camWanted;stop(true);camWanted=w;}}
+  else if(camWanted&&!stream&&!zx&&!starting){setTimeout(function(){if(camWanted&&!document.hidden)start();},300);}
+});
+window.addEventListener("pagehide",function(){if(stream||zx){stop(true);}});
+$("cam").addEventListener("click",function(){if(stream||zx||starting)stop();else start();});
 $("exp").addEventListener("click",function(){
   var c=cnt(),codes={};D.products.forEach(function(p){if(c[p.id]!==undefined)codes[p.id]=p.code;});
-  var out={type:"wetstock-counts",newProducts:D.newProducts,siteId:D.siteId,date:new Date().toISOString().slice(0,10),countedBy:"",counts:c,barcodes:D.barcodes,codes:codes};
+  var out={type:"wetstock-counts",newProducts:D.newProducts,siteId:D.siteId,date:new Date().toISOString().slice(0,10),countedBy:"",counts:c,barcodes:D.barcodes,codes:codes,enableSites:(D.enabled&&D.enabled[D.siteId])||[]};
   var blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
   a.href=url;a.download="wetstock-scan-counts-"+out.date+".json";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);say("Counts exported. Open the file in the Wet Stock System: Count Sheet &rarr; Scan barcodes &rarr; Import counts.","ok");});
 load();show();
