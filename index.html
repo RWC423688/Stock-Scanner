@@ -36,7 +36,8 @@ select,input[type=text],input[type=number],input[type=search]{width:100%;padding
   <input type="search" id="fq" placeholder="No barcode? Type to find a product&hellip;" autocomplete="off">
   <div id="fres" class="box pick hide"></div>
   <div id="status">Point the camera at a barcode.</div>
-  <div id="qtyBox" class="row hide"><input type="number" step="any" min="0" id="qty" placeholder="Quantity"><button id="qtyOk">Add</button><button class="sec" id="qtyNo">Cancel</button></div>
+  <div id="qtyBox" class="row hide"><input type="number" step="any" min="0" id="qty" placeholder="Quantity"><button id="qtyOk">Add</button><button class="sec" id="qtyNo">Cancel</button><button class="sec" id="qtyBc" title="Change this product's barcode">Barcode</button></div>
+  <div id="bcBox" class="box hide"><strong id="bcTitle"></strong><div id="bcList" style="margin:6px 0"></div><div class="row"><input type="text" id="bcNew" inputmode="numeric" placeholder="New barcode"><button class="sec sm" id="bcScan" type="button">Scan</button><button id="bcAdd">Add</button></div><small style="color:var(--soft)">To change a barcode: remove the old one, then add the new one.</small><div class="row" style="margin-top:6px"><button class="sec sm" id="bcDone">Done</button></div></div>
   <div id="enBox" class="box hide"><div id="enMsg"></div><div class="row" style="margin-top:8px"><button id="enYes" class="brick">Enable for this site</button><button class="sec" id="enNo">Cancel</button></div></div>
   <div id="linkBox" class="box hide"><input type="search" id="lq" placeholder="Search product to link&hellip;"><div class="pick" id="pick"></div><button class="sec sm" id="skip" style="margin-top:8px">Skip</button> <button class="sec sm" id="linkNew" style="margin-top:8px">Not in list: add new product</button></div>
 
@@ -57,7 +58,7 @@ select,input[type=text],input[type=number],input[type=search]{width:100%;padding
 <script>
 (function(){
 var KEY="stockscanner_v1", D={products:[],sites:[],barcodes:{},counts:{},siteId:"",newProducts:[]};
-function load(){try{var d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&d.products){D=d;if(!D.newProducts)D.newProducts=[];}}catch(e){}if(D&&!D.enabled)D.enabled={};}
+function load(){try{var d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&d.products){D=d;if(!D.newProducts)D.newProducts=[];}}catch(e){}if(D&&!D.enabled)D.enabled={};if(D&&!D.bcEdits)D.bcEdits={};}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(D));}catch(e){}}
 var $=function(i){return document.getElementById(i);}, esc=function(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
 var names={};try{names=JSON.parse($("bcnames").textContent);}catch(e){}
@@ -71,7 +72,7 @@ function show(){
   $("site").innerHTML=D.sites.map(function(s){return '<option value="'+esc(s.id)+'"'+(s.id===D.siteId?' selected':'')+'>'+esc(s.name)+'</option>';}).join("");
   var c=cnt(), ids=Object.keys(c).filter(function(i){return c[i]!==""&&c[i]!=null;});
   $("cnt").textContent=ids.length;
-  $("list").innerHTML=ids.map(function(i){var p=D.products.find(function(x){return x.id===i;});if(!p)return"";return '<div class="it"><div class="n">'+esc(p.desc)+'<br><small>'+esc(p.unit||"")+'</small></div><input type="number" step="any" data-id="'+esc(i)+'" value="'+esc(c[i])+'"></div>';}).join("")||'<small>Nothing yet.</small>';
+  $("list").innerHTML=ids.map(function(i){var p=D.products.find(function(x){return x.id===i;});if(!p)return"";return '<div class="it"><div class="n">'+esc(p.desc)+'<br><small>'+esc(p.unit||"")+'</small></div><button class="sec sm" data-bc="'+esc(i)+'" type="button">Barcode</button><input type="number" step="any" data-id="'+esc(i)+'" value="'+esc(c[i])+'"></div>';}).join("")||'<small>Nothing yet.</small>';
   $("foot").textContent=D.products.length+" products, "+Object.keys(D.barcodes).length+" barcodes linked."+(D.updated?" Product list from "+new Date(D.updated).toLocaleDateString("en-GB")+".":"");
 }
 function onData(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(){try{
@@ -86,7 +87,7 @@ function onData(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();r
     else pend2.push(x);});
   var added=b.products.filter(function(x){return !oldIds[x.id];}).length;
   var sid=D.siteId;if(!b.sites.some(function(s){return s.id===sid;}))sid=(b.sites[0]&&b.sites[0].id)||"";
-  var enab=D.enabled||{};D={newProducts:pend2,products:b.products.concat(pend2),sites:b.sites,barcodes:bcs,counts:counts,siteId:sid,enabled:enab,updated:b.exportedAt||new Date().toISOString()};
+  var enab=D.enabled||{},bce=D.bcEdits||{};Object.keys(bce).forEach(function(k){if(bce[k]===null)delete bcs[k];else bcs[k]=bce[k];});D={bcEdits:bce,newProducts:pend2,products:b.products.concat(pend2),sites:b.sites,barcodes:bcs,counts:counts,siteId:sid,enabled:enab,updated:b.exportedAt||new Date().toISOString()};
   Object.keys(enab).forEach(function(s){enab[s].forEach(function(id){var q=D.products.find(function(x){return x.id===id;});if(q){if(!q.active)q.active={};q.active[s]=true;}});});
   Object.keys(b.countsBySite||{}).forEach(function(s){if(!D.counts[s]||!Object.keys(D.counts[s]).length)D.counts[s]=Object.assign({},b.countsBySite[s]);});
   save();show();if(added>0&&Object.keys(oldIds).length)say("Products updated: "+added+" new product"+(added>1?"s":"")+" added. Your counts and barcode links are unchanged.","ok");else if(Object.keys(oldIds).length)say("Products updated. No new products in this file. Your counts are unchanged.","ok");
@@ -95,7 +96,7 @@ $("bkFile").addEventListener("change",onData);$("updFile").addEventListener("cha
 $("reload").addEventListener("click",function(){$("updFile").click();});
 $("site").addEventListener("change",function(){D.siteId=this.value;save();show();});
 $("list").addEventListener("input",function(e){var id=e.target.getAttribute("data-id");if(!id)return;cnt()[id]=e.target.value;save();});
-$("clr").addEventListener("click",function(){if(this.dataset.s!=="1"){this.dataset.s="1";this.textContent="Tap again to clear";var b=this;setTimeout(function(){b.dataset.s="";b.textContent="Clear counts";},3000);return;}D.counts[D.siteId]={};if(D.enabled)D.enabled[D.siteId]=[];save();show();this.dataset.s="";this.textContent="Clear counts";});
+$("clr").addEventListener("click",function(){if(this.dataset.s!=="1"){this.dataset.s="1";this.textContent="Tap again to clear";var b=this;setTimeout(function(){b.dataset.s="";b.textContent="Clear counts";},3000);return;}D.counts[D.siteId]={};if(D.enabled)D.enabled[D.siteId]=[];D.bcEdits={};save();show();this.dataset.s="";this.textContent="Clear counts";});
 function add(p,q){var c=cnt(),cur=parseFloat(c[p.id]);if(isNaN(cur))cur=0;var n=Math.round((cur+q)*10000)/10000;c[p.id]=String(n);save();show();say('<strong>'+esc(p.desc)+'</strong> ('+esc(p.unit||"")+')<br>+'+q+' &rarr; now <strong>'+n+'</strong>',"ok");}
 
 function uid(){return "u"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -126,8 +127,10 @@ $("npSave").addEventListener("click",function(){
   var q=parseFloat($("npQty").value);if(!isNaN(q)&&act[D.siteId]){cnt()[p.id]=String(q);}
   save();$("newBox").classList.add("hide");show();say('<strong>'+esc(desc)+'</strong> saved on this phone.'+(bc?' Barcode linked.':'')+' Tap Export counts to send it to the Wet Stock System.',"ok");
 });
-function busy(){return !!pend||!$("newBox").classList.contains("hide");}
+var bcP=null,bcWant=false;
+function busy(){if(bcWant)return false;return !!pend||!$("newBox").classList.contains("hide")||!$("bcBox").classList.contains("hide");}
 function handle(code,fromCam){
+  if(fromCam&&bcWant){code=String(code).trim();if(code){$("bcNew").value=code.replace(/\s+/g,"");bcWant=false;beep();$("bcScan").textContent="Scan";}return;}
   if(fromCam&&busy())return; // keep the current barcode until it is accepted, skipped or cleared
   code=String(code).trim();if(!code)return;var t=Date.now();if(code===lastC&&t-lastT<2500)return;lastC=code;lastT=t;beep();
   $("qtyBox").classList.add("hide");$("linkBox").classList.add("hide");pend=null;
@@ -212,10 +215,33 @@ document.addEventListener("visibilitychange",function(){
   else if(camWanted&&!stream&&!zx&&!starting){setTimeout(function(){if(camWanted&&!document.hidden)start();},300);}
 });
 window.addEventListener("pagehide",function(){if(stream||zx){stop(true);}});
+
+function bcRender(){
+  var p=bcP;if(!p)return;$("bcTitle").textContent="Barcodes: "+p.desc;
+  var codes=Object.keys(D.barcodes).filter(function(b){return D.barcodes[b]===p.id;});
+  $("bcList").innerHTML=codes.length?codes.map(function(b){return '<div style="display:flex;gap:8px;align-items:center;padding:4px 0"><span style="flex:1;font-family:monospace">'+esc(b)+'</span><button class="sec sm" data-bcrm="'+esc(b)+'" type="button">Remove</button></div>';}).join(""):'<small style="color:var(--soft)">No barcode linked yet.</small>';
+}
+function bcOpen(p){bcP=p;bcWant=false;$("bcScan").textContent="Scan";$("bcNew").value="";bcRender();$("bcBox").classList.remove("hide");$("bcBox").scrollIntoView({block:"center"});}
+function bcClose(){bcWant=false;bcP=null;$("bcBox").classList.add("hide");$("bcScan").textContent="Scan";}
+$("bcList").addEventListener("click",function(e){var b=e.target.getAttribute&&e.target.getAttribute("data-bcrm");if(!b)return;delete D.barcodes[b];D.bcEdits[b]=null;save();bcRender();show();});
+$("bcAdd").addEventListener("click",function(){
+  var code=$("bcNew").value.replace(/\s+/g,"");if(!code||!bcP)return;
+  var cur=D.barcodes[code];
+  if(cur&&cur!==bcP.id){var o=D.products.find(function(x){return x.id===cur;});if(!confirm("Barcode "+code+" is already linked to "+(o?o.desc:"another product")+". Move it to "+bcP.desc+"?"))return;}
+  D.barcodes[code]=bcP.id;D.bcEdits[code]=bcP.id;save();$("bcNew").value="";bcWant=false;$("bcScan").textContent="Scan";bcRender();show();say("Barcode "+esc(code)+" linked to <strong>"+esc(bcP.desc)+"</strong>.","ok");
+});
+$("bcNew").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();$("bcAdd").click();}});
+$("bcScan").addEventListener("click",function(){
+  if(bcWant){bcWant=false;this.textContent="Scan";return;}
+  bcWant=true;this.textContent="Scanning… (tap to cancel)";if(!stream&&!zx&&!starting)start();
+});
+$("bcDone").addEventListener("click",bcClose);
+$("qtyBc").addEventListener("click",function(){if(pend&&pend.p)bcOpen(pend.p);});
+$("list").addEventListener("click",function(e){var id=e.target.getAttribute&&e.target.getAttribute("data-bc");if(!id)return;var p=D.products.find(function(x){return x.id===id;});if(p)bcOpen(p);});
 $("cam").addEventListener("click",function(){if(stream||zx||starting)stop();else start();});
 $("exp").addEventListener("click",function(){
   var c=cnt(),codes={};D.products.forEach(function(p){if(c[p.id]!==undefined)codes[p.id]=p.code;});
-  var out={type:"wetstock-counts",newProducts:D.newProducts,siteId:D.siteId,date:new Date().toISOString().slice(0,10),countedBy:"",counts:c,barcodes:D.barcodes,codes:codes,enableSites:(D.enabled&&D.enabled[D.siteId])||[]};
+  var out={type:"wetstock-counts",newProducts:D.newProducts,siteId:D.siteId,date:new Date().toISOString().slice(0,10),countedBy:"",counts:c,barcodes:D.barcodes,codes:codes,bcEdits:D.bcEdits||{},enableSites:(D.enabled&&D.enabled[D.siteId])||[]};
   var blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"}),url=URL.createObjectURL(blob),a=document.createElement("a");
   a.href=url;a.download="wetstock-scan-counts-"+out.date+".json";document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);say("Counts exported. Open the file in the Wet Stock System: Count Sheet &rarr; Scan barcodes &rarr; Import counts.","ok");});
 load();show();
